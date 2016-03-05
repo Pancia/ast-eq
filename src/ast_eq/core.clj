@@ -20,17 +20,19 @@
              (re-find #"^_" (str x)))
            (ellipsis? [x]
              (re-find #"^\.{3}$" (str x)))
+           (end-of-input? [x]
+             (= '$ x))
            (update-env [auto exp act]
              (.value auto #(update % :env assoc exp act)))
+           (type= [x y] (= (type x) (type y)))
+           (*= [x y] (and (= x y) (type= x y)))
            (normal-step [{:keys [value tapes]
                           :as auto}]
              (let [[exp act] (mapv first tapes)
                    {:keys [env]} value]
                (cond
-                 (and (coll? act) (coll? exp))
-                 (if (->> [act exp]
-                          (map type)
-                          (apply =))
+                 (every? (every-pred coll? seq) [exp act])
+                 (if (type= exp act)
                    (-> auto (run exp act)
                        (assoc :tapes tapes)
                        (.advance :all)
@@ -45,6 +47,11 @@
                    (-> auto (update-env exp act)
                        (.advance :all)))
 
+                 (end-of-input? exp)
+                 (if (not act)
+                   auto
+                   (.reject auto [:end-of-input act]))
+
                  (ignore-var? exp)
                  (.advance auto :all)
 
@@ -52,7 +59,7 @@
                  (-> auto (.advance 0)
                      (.transition :ellipsis))
 
-                 :else (if (= act exp)
+                 :else (if (*= act exp)
                          (.advance auto :all)
                          (.reject auto [exp act])))))
            (ellipsis-step [{:keys [value tapes]
@@ -66,21 +73,16 @@
                  (and (meta-var? exp) (not (get env exp)))
                  (.reject auto :meta-var/unbound)
 
-                 (and (coll? act) (coll? exp))
+                 (every? (every-pred coll? seq) [act exp])
                  (cond
-                   (and (->> [act exp]
-                             (map type)
-                             (apply =))
-                        (= (first act)
-                           (or (get env (first exp))
-                               (first exp))))
+                   (*= (first act) (get env (first exp) (first exp)))
                    (.transition auto :normal)
 
                    :else
                    (.advance auto 1))
 
                  :else
-                 (if (= act (get env exp exp))
+                 (if (*= act (get env exp exp))
                    (-> auto (.advance :all)
                        (.transition :normal))
                    (.advance auto 1)))))]
@@ -89,6 +91,10 @@
                :ellipsis ellipsis-step
                :accept-states #{:normal}
                :on-empty (fn [auto exp act]
-                           (when exp (.reject auto :expected/more)))})
+                           (if exp
+                             (and (not= (first exp) '$)
+                                  (.reject auto :expected/more))
+                             (and (#{:ellipsis} (:state auto))
+                                  (.reject auto :ellipsis/unterminated))))})
        (run exp act)
        (clean)))))
