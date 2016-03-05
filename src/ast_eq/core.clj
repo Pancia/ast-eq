@@ -1,12 +1,18 @@
 (ns ast-eq.core
   (:require [machine.core :refer [build run]]))
 
+(defn clean [result]
+  (-> result
+      (update :steps (comp set keys))
+      (dissoc :on-empty)))
+
 (defn ast=
-  "WIP"
   ([exp]
    (fn [act]
-     (-> (ast= exp act)
-         :state #{:accepted})))
+     (let [result (ast= exp act)]
+       (or (-> result
+               :state #{:normal})
+           (clean result)))))
   ([exp act]
    (letfn [(meta-var? [x]
              (re-find #"^\?.+$" (str x)))
@@ -62,13 +68,16 @@
 
                  (and (coll? act) (coll? exp))
                  (cond
-                   (= (first act)
-                      (or (get env (first exp))
-                          (first exp)))
+                   (and (->> [act exp]
+                             (map type)
+                             (apply =))
+                        (= (first act)
+                           (or (get env (first exp))
+                               (first exp))))
                    (.transition auto :normal)
 
                    :else
-                   (.reject auto :ellipsis/rejected))
+                   (.advance auto 1))
 
                  :else
                  (if (= act (get env exp exp))
@@ -80,5 +89,6 @@
                :ellipsis ellipsis-step
                :accept-states #{:normal}
                :on-empty (fn [auto exp act]
-                           (when (not act) (.reject auto :expected/more)))})
-       (run exp act)))))
+                           (when exp (.reject auto :expected/more)))})
+       (run exp act)
+       (clean)))))
