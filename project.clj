@@ -1,4 +1,4 @@
-(defproject ast-eq "0.1.0"
+(defproject ast-eq "0.1.1"
   :description "Verifies equality between two data structures with unique elements (eg: gensym)"
   :url "https://github.com/Pancia/ast-eq"
   :license {:name "MIT"
